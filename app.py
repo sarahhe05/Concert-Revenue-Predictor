@@ -74,7 +74,6 @@ with st.form("input_form"):
     ticket_price_max = st.number_input("Ticket Price Max (USD)", min_value=0.0, step=1.0)
     
     date = st.date_input("Event Date", value=datetime.today())
-    hour = st.slider("Hour of Event (0-23)", min_value=0, max_value=23, value=20)
     
     submit = st.form_submit_button("🎯 Predict Revenue")
 
@@ -107,8 +106,7 @@ if submit:
         'year': int(year),
         'month': int(month),
         'day': int(day),
-        'weekday': int(weekday),
-        'hour': int(hour)
+        'weekday': int(weekday)
     }])
 
     model_features = catboost_model.feature_names_
