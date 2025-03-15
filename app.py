@@ -6,7 +6,18 @@ from catboost import CatBoostRegressor, Pool
 import lightgbm as lgb
 import numpy as np
 
-# Load your trained models
+# Hide form border using custom CSS
+st.markdown("""
+    <style>
+    div[data-testid="stForm"] {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# Load trained models
 with open("catboost_model.pkl", "rb") as f:
     catboost_model = pickle.load(f)
 
@@ -16,116 +27,87 @@ with open("lgb_model.pkl", "rb") as f:
 with open("meta_model.pkl", "rb") as f:
     meta_model = pickle.load(f)
 
-# Load your dataset for reference
+# Load reference dataset
 data_options = pd.read_csv("concert_data_filtered.csv")
 
-# Define categorical columns used during training
-categorical_cols = ['Headliner', 'Support', 'Venue', 'City', 'State', 'Country', 
+# Define categorical columns
+categorical_cols = ['Headliner', 'Support', 'Venue', 'City', 'State', 'Country',
                     'Market', 'Company Type', 'Promoter', 'Genre', 'month', 'weekday']
 
-# Prepare dropdown options
-top_headliners = data_options['Headliner'].value_counts().head(50).index.tolist()
-top_support = data_options['Support'].value_counts().head(20).index.tolist()
-top_venue = data_options['Venue'].value_counts().head(20).index.tolist()
-top_company_types = data_options['Company Type'].dropna().value_counts().head(20).index.tolist()
-top_promoters = data_options['Promoter'].dropna().value_counts().head(20).index.tolist()
-top_genres = data_options['Genre'].dropna().value_counts().head(20).index.tolist()
+# Clean Headliner names (strip whitespace and quotes)
+headliner_counts = data_options['Headliner'].dropna().astype(str).apply(lambda x: x.strip().strip('"').strip("'"))
+top_headliners = headliner_counts.value_counts().head(150).index.tolist()
 
-# Pre-filter venue-related info
-venue_filter = {
-    venue: data_options[data_options['Venue'] == venue]
-    for venue in top_venue
-}
+# Move headliners starting with numbers to the end
+alpha_headliners = [h for h in top_headliners if not h[:1].isdigit()]
+numeric_headliners = [h for h in top_headliners if h[:1].isdigit()]
+top_headliners = sorted(alpha_headliners) + sorted(numeric_headliners)
 
-# --- USER INPUT FORM ---
+# Clean and sort other dropdowns (you can apply same cleaning if needed)
+top_support = data_options['Support'].dropna().astype(str).apply(lambda x: x.strip().strip('"').strip("'")).value_counts().head(100).index.sort_values(ascending=True).tolist()
+top_venue = data_options['Venue'].value_counts().head(100).index.sort_values(ascending=True).tolist()
+top_company_types = data_options['Company Type'].dropna().value_counts().head(30).index.sort_values(ascending=True).tolist()
+top_promoters = data_options['Promoter'].dropna().value_counts().head(30).index.sort_values(ascending=True).tolist()
+
+# Title
 st.title("🎤 Concert Gross Revenue Prediction")
 
+# Venue selection (outside form so City/State updates immediately)
+venue_selected = st.selectbox("Venue", top_venue)
+
+# Auto-fill city, state, market, capacity
+venue_data = data_options[data_options['Venue'] == venue_selected]
+city_value = venue_data['City'].mode()[0] if not venue_data['City'].isna().all() else ""
+state_value = venue_data['State'].mode()[0] if not venue_data['State'].isna().all() else ""
+market_value = venue_data['Market'].mode()[0] if not venue_data['Market'].isna().all() else ""
+avg_event_capacity = venue_data['Avg. Event Capacity'].mean()
+
+# Show auto-filled City and State only (Market is hidden from UI)
+st.text_input("City", value=city_value, disabled=True)
+st.text_input("State", value=state_value, disabled=True)
+
+# Input form for other fields
 with st.form("input_form"):
-    # Venue selection
-    venue_options = top_venue + ["Other (type manually)"]
-    venue_selected = st.selectbox("Venue", venue_options)
-    if venue_selected == "Other (type manually)":
-        venue = st.text_input("Enter custom venue")
-        venue_data = data_options  # fallback
-    else:
-        venue = venue_selected
-        venue_data = venue_filter[venue]
-
-    # Venue-based suggestions
-    cities_for_venue = venue_data['City'].dropna().unique().tolist()
-    states_for_venue = venue_data['State'].dropna().unique().tolist()
-    markets_for_venue = venue_data['Market'].dropna().unique().tolist()
-    avg_capacity_for_venue = venue_data['Avg. Event Capacity'].mean()
-
-    city = st.selectbox("City", cities_for_venue + ['Other (type manually)'])
-    if city == "Other (type manually)":
-        city = st.text_input("Enter custom city")
-
-    state = st.selectbox("State", states_for_venue + ['Other (type manually)'])
-    if state == "Other (type manually)":
-        state = st.text_input("Enter custom state")
-
-    market = st.selectbox("Market", markets_for_venue + ['Other (type manually)'])
-    if market == "Other (type manually)":
-        market = st.text_input("Enter custom market")
-
-    avg_event_capacity = st.number_input("Avg. Event Capacity", min_value=0.0, step=1.0, value=avg_capacity_for_venue or 0.0)
-
-    # Headliner / Support
-    headliner = st.selectbox("Headliner", top_headliners + ['Other (type manually)'])
-    if headliner == "Other (type manually)":
-        headliner = st.text_input("Enter custom headliner")
-
-    support = st.selectbox("Support Act(s)", top_support + ['Other (type manually)'])
-    if support == "Other (type manually)":
-        support = st.text_input("Enter custom support act")
-
-    # Other fields
-    company_type = st.selectbox("Company Type", top_company_types + ['Other (type manually)'])
-    if company_type == "Other (type manually)":
-        company_type = st.text_input("Enter custom company type")
-
-    promoter = st.selectbox("Promoter", top_promoters + ['Other (type manually)'])
-    if promoter == "Other (type manually)":
-        promoter = st.text_input("Enter custom promoter")
-
-    genre = st.selectbox("Genre", top_genres + ['Other (type manually)'])
-    if genre == "Other (type manually)":
-        genre = st.text_input("Enter custom genre")
+    headliner = st.selectbox("Headliner", top_headliners)
+    support = st.selectbox("Support Act(s)", top_support)
+    company_type = st.selectbox("Company Type", top_company_types)
+    promoter = st.selectbox("Promoter", top_promoters)
 
     number_of_shows = st.number_input("Number of Shows", min_value=1, step=1)
-    avg_capacity_sold = st.number_input("Avg. Capacity Sold (0-1)", min_value=0.0, max_value=1.0, step=0.01)
+    avg_capacity_sold = st.number_input("% Capacity Sold", min_value=0, max_value=100, step=1)
     ticket_price_min = st.number_input("Ticket Price Min (USD)", min_value=0.0, step=1.0)
     ticket_price_max = st.number_input("Ticket Price Max (USD)", min_value=0.0, step=1.0)
 
     date = st.date_input("Event Date", value=datetime.today())
     hour = st.slider("Hour of Event (0-23)", min_value=0, max_value=23, value=20)
 
-    submit = st.form_submit_button("🎯 Predict Gross Revenue")
+    submit = st.form_submit_button("🎯 Predict Revenue")
 
-# --- PREDICTION ---
+# Prediction
 if submit:
     year = date.year
     month = date.month
     day = date.day
     weekday = date.weekday()
-    country = "USA"
+    country = "United States"
 
-    # Prepare input data
+    # Automatically calculate the Genre in the backend
+    genre_value = data_options[data_options['Headliner'].astype(str).str.strip().str.strip('"').str.strip("'") == headliner]['Genre'].mode()[0]
+
     input_data = pd.DataFrame([{
         'Number of Shows': number_of_shows,
         'Headliner': headliner,
         'Support': support,
-        'Venue': venue,
-        'City': city,
-        'State': state,
+        'Venue': venue_selected,
+        'City': city_value,
+        'State': state_value,
         'Country': country,
-        'Market': market,
+        'Market': market_value,
         'Company Type': company_type,
         'Promoter': promoter,
-        'Genre': genre,
+        'Genre': genre_value,
         'Avg. Event Capacity': avg_event_capacity,
-        'Avg. Capacity Sold': avg_capacity_sold,
+        '% Capacity Sold': avg_capacity_sold / 100,
         'Ticket Price Min USD': ticket_price_min,
         'Ticket Price Max USD': ticket_price_max,
         'year': year,
@@ -135,19 +117,18 @@ if submit:
         'hour': hour
     }])
 
-    # Ensure consistent column order
+    # Ensure all expected columns
     expected_cols = catboost_model.feature_names_
     for col in expected_cols:
         if col not in input_data.columns:
             input_data[col] = pd.NA
-
     input_data = input_data[expected_cols]
 
-    # Cast categorical columns to category
+    # Cast categoricals
     for col in categorical_cols:
         input_data[col] = input_data[col].astype('category')
 
-    # --- Model Predictions ---
+    # Predictions
     cat_pool = Pool(data=input_data, cat_features=categorical_cols)
     catboost_pred = catboost_model.predict(cat_pool)
     lgb_pred = lgb_model.predict(input_data)
@@ -158,13 +139,10 @@ if submit:
     })
 
     final_prediction = meta_model.predict(combined_preds)[0]
-
-    # Reverse log transformation to original scale
     final_prediction_original = np.expm1(final_prediction)
 
-    st.success(f"💰 Predicted Avg. Gross Revenue: **${final_prediction_original:,.2f} USD**")
+    st.success(f"💰 Predicted Revenue: **${final_prediction_original:,.2f} USD**")
 
-    # Optional debug info
     with st.expander("🔍 Show Debug Info"):
         st.write("Input Data")
         st.dataframe(input_data)
