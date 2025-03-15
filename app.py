@@ -3,6 +3,7 @@ import pickle
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import catboost
 from catboost import CatBoostRegressor, Pool
 import lightgbm as lgb
 
@@ -50,7 +51,7 @@ top_venue = sorted(data_options['Venue'].dropna().value_counts().head(100).index
 top_company_types = sorted(data_options['Company Type'].dropna().value_counts().head(30).index.tolist())
 top_promoters = sorted(data_options['Promoter'].dropna().value_counts().head(30).index.tolist())
 
-st.title("🎤 Concert Gross Revenue Prediction")
+st.title("🎤 Concert Revenue Prediction")
 
 venue_selected = st.selectbox("Venue", top_venue)
 venue_data = data_options[data_options['Venue'] == venue_selected]

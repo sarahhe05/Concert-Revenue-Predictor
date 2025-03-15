@@ -1,0 +1,5 @@
+streamlit
+catboost
+pandas  # (if used in your project)
+numpy   # (if used in your project)
+# add any other dependencies you're using
